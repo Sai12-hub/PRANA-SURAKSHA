@@ -26,7 +26,7 @@ def add_custom_background():
     )
 
 def add_logo():
-    st.image("C:/Users/gunis/OneDrive/Desktop/streamlit_run/PRANA_SURAKSHA.png", width=80)
+    st.image("./PRANA_SURAKSHA.png", width=80)
 
 # ---------- Session State Initialization ----------
 if 'user_db' not in st.session_state:
