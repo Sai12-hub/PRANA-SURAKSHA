@@ -1,10 +1,12 @@
 import streamlit as st
+import sqlite3
 import random
 import time
+import re
 from streamlit_folium import st_folium
 import folium
 
-# ---------- Styling: Background and Branding ----------
+# ---------- Styling ----------
 def add_custom_background():
     st.markdown(
         """
@@ -26,19 +28,84 @@ def add_custom_background():
     )
 
 def add_logo():
-    st.image("./PRANA_SURAKSHA.png", width=80)
+    try:
+        st.image("./PRANA_SURAKSHA.png", width=80)
+    except:
+        st.warning("Logo image not found.")
 
-# ---------- Session State Initialization ----------
-if 'user_db' not in st.session_state:
-    st.session_state['user_db'] = {}
+# ---------- Validation ----------
+def is_valid_email(email):
+    pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
+    return re.match(pattern, email) is not None
+
+def is_valid_mobile(mobile):
+    pattern = r'^\d{10}$'
+    return re.match(pattern, mobile) is not None
+
+# ---------- Database ----------
+def create_user_table():
+    conn = sqlite3.connect("users.db")
+    c = conn.cursor()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id TEXT PRIMARY KEY,
+            email TEXT,
+            username TEXT,
+            mobile TEXT,
+            identity TEXT,
+            password TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+def reset_user_table():
+    conn = sqlite3.connect("users.db")
+    c = conn.cursor()
+    c.execute("DROP TABLE IF EXISTS users")
+    c.execute("""
+        CREATE TABLE users (
+            user_id TEXT PRIMARY KEY,
+            email TEXT,
+            username TEXT,
+            mobile TEXT,
+            identity TEXT,
+            password TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+def insert_user(user_id, email, username, mobile, identity, password):
+    conn = sqlite3.connect("users.db")
+    c = conn.cursor()
+    c.execute("INSERT INTO users VALUES (?, ?, ?, ?, ?, ?)",
+              (user_id, email, username, mobile, identity, password))
+    conn.commit()
+    conn.close()
+
+def get_user(user_id):
+    conn = sqlite3.connect("users.db")  # ✅ Fixed typo here
+    c = conn.cursor()
+    c.execute("SELECT * FROM users WHERE user_id=?", (user_id,))  # ✅ Correct column
+    user = c.fetchone()
+    conn.close()
+    return user
+
+# ---------- Ensure table exists ----------
+create_user_table()
+
+# ---------- Session State ----------
 if 'authenticated_user' not in st.session_state:
     st.session_state['authenticated_user'] = None
+if 'page' not in st.session_state:
+    st.session_state['page'] = 'login'
 
-# ---------- Utility ----------
+# ---------- OTP Generator ----------
 def send_otp():
     return str(random.randint(100000, 999999))
 
-# ---------- Login ----------
+# ---------- Pages ----------
 def login_page():
     add_logo()
     st.title("🔐 Login")
@@ -46,15 +113,26 @@ def login_page():
     password = st.text_input("Password", type="password")
 
     if st.button("Login"):
-        user_db = st.session_state['user_db']
-        if user_id in user_db and user_db[user_id]['password'] == password:
+        user = get_user(user_id)
+        if user and user[5] == password:
             st.success("Login successful")
             st.session_state['authenticated_user'] = user_id
+            st.session_state['page'] = 'home'
             st.rerun()
         else:
             st.error("Invalid credentials")
 
-# ---------- Register ----------
+    st.write("---")
+    if st.button("New user? Register here"):
+        st.session_state['page'] = 'register'
+        st.rerun()
+
+    # 🔧 Developer Tools
+    with st.expander("🛠 Developer Tools (Danger Zone)"):
+        if st.button("⚠️ Reset User Table (Drop and Recreate)"):
+            reset_user_table()
+            st.success("✅ User table reset successfully. You can now register fresh users.")
+
 def register_page():
     add_logo()
     st.title("📝 Register")
@@ -70,34 +148,37 @@ def register_page():
         st.session_state['otp_sent'] = False
 
     if st.button("Send OTP"):
-        st.session_state.generated_otp = send_otp()
-        st.session_state.otp_sent = True
-        st.success(f"OTP sent to your number (simulated): {st.session_state.generated_otp}")
+        if not is_valid_email(email):
+            st.error("❌ Invalid Email")
+        elif not is_valid_mobile(mobile):
+            st.error("❌ Invalid Mobile Number (must be 10 digits)")
+        elif get_user(user_id):
+            st.error("❌ User ID already exists.")
+        else:
+            st.session_state.generated_otp = send_otp()
+            st.session_state.otp_sent = True
+            st.success(f"✅ OTP sent (simulated): {st.session_state.generated_otp}")
 
     if st.session_state.otp_sent:
         entered_otp = st.text_input("Enter OTP")
-
         if st.button("Submit"):
-            if user_id in st.session_state['user_db']:
-                st.error("User ID already exists. Please choose another.")
-            elif entered_otp == st.session_state.get("generated_otp"):
-                st.session_state['user_db'][user_id] = {
-                    'email': email,
-                    'username': username,
-                    'mobile': mobile,
-                    'identity': identity,
-                    'password': password
-                }
+            if entered_otp == st.session_state.get("generated_otp"):
+                insert_user(user_id, email, username, mobile, identity, password)
                 st.success("Registration successful. Please login.")
                 st.session_state['otp_sent'] = False
+                st.session_state['page'] = 'login'
                 st.rerun()
             else:
                 st.error("Invalid OTP")
 
-# ---------- Home ----------
+    st.write("---")
+    if st.button("Back to Login"):
+        st.session_state['page'] = 'login'
+        st.rerun()
+
 def home_page():
     add_logo()
-    st.markdown("<h2 style='text-align:center; color:#2E8B57;'>WELCOME TO PRANA SURAKSHA</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align:center;'>WELCOME TO PRANA SURAKSHA</h2>", unsafe_allow_html=True)
     st.title(f"🏠 Welcome, {st.session_state['authenticated_user']}")
 
     col1, col2 = st.columns(2)
@@ -107,15 +188,34 @@ def home_page():
             st.rerun()
     with col2:
         if st.button("🚦 Signal Control"):
-            st.session_state['page'] = 'signal_control'
+            st.session_state['page'] = 'signal'
             st.rerun()
 
-# ---------- Emergency ----------
-# ---------- Emergency ----------
-from streamlit_folium import st_folium
-import folium
+    if st.button("👤 View Profile"):
+        st.session_state['page'] = 'profile'
+        st.rerun()
+    if st.button("🚪 Logout"):
+        st.session_state['authenticated_user'] = None
+        st.session_state['page'] = 'login'
+        st.rerun()
 
-# ---------- Emergency ----------
+def profile_page():
+    add_logo()
+    st.title("👤 Profile")
+
+    user_id = st.session_state['authenticated_user']
+    user = get_user(user_id)
+
+    st.write(f"**User ID:** {user_id}")
+    st.write(f"**Username:** {user[2]}")
+    st.write(f"**Email:** {user[1]}")
+    st.write(f"**Mobile:** {user[3]}")
+    st.write(f"**ID Proof:** {user[4]}")
+
+    if st.button("🔙 Back"):
+        st.session_state['page'] = 'home'
+        st.rerun()
+
 def emergency_page():
     add_logo()
     st.title("🚑 Emergency Connect")
@@ -128,7 +228,6 @@ def emergency_page():
         "Fortis Healthcare": {"location": (17.4350, 78.3942), "contact": "040-33446677"}
     }
 
-    # Assign emergency code and hospital once per new page visit
     if 'emergency_code' not in st.session_state or st.session_state.get('last_page') != 'emergency':
         st.session_state['emergency_code'] = str(random.randint(100000, 999999))
         st.session_state['last_page'] = 'emergency'
@@ -136,106 +235,68 @@ def emergency_page():
 
     assigned = st.session_state['assigned_hospital']
     hospital_lat, hospital_lon = hospitals[assigned]['location']
+    user_lat, user_lon = 17.4325, 78.4456
 
-    st.info("Connecting to nearest hospital...")
-    time.sleep(1.5)
     st.success(f"Connected to: **{assigned}**")
-    st.success(f"Emergency code generated: `{st.session_state['emergency_code']}`")
+    st.success(f"Emergency Code: `{st.session_state['emergency_code']}`")
 
-    # Nearby hospital list
     st.markdown("### 🏥 Nearby Hospitals:")
     for name, data in hospitals.items():
         st.markdown(f"- **{name}** | 📞 {data['contact']}")
 
-    # Optional: Simulated user location (could be dynamic later)
-    user_lat, user_lon = 17.4325, 78.4456  # Example: Banjara Hills, Hyderabad
+    url = f"https://www.google.com/maps/dir/{user_lat},{user_lon}/{hospital_lat},{hospital_lon}"
+    st.markdown(f"[🧭 Directions to {assigned} →](%s)" % url)
 
-    # Directions button
-    google_maps_url = f"https://www.google.com/maps/dir/{user_lat},{user_lon}/{hospital_lat},{hospital_lon}"
-    st.markdown(f"[🧭 Click here for directions to {assigned} →](%s)" % google_maps_url)
-
-    # Map
-    st.markdown("### 🗺️ Map View of Hospitals")
     m = folium.Map(location=[user_lat, user_lon], zoom_start=13)
-
-    # Add user marker
-    folium.Marker(
-        [user_lat, user_lon],
-        popup="Your Location",
-        icon=folium.Icon(color="green", icon="user")
-    ).add_to(m)
-
-    # Add hospital markers
+    folium.Marker([user_lat, user_lon], popup="You", icon=folium.Icon(color="green")).add_to(m)
     for name, data in hospitals.items():
         lat, lon = data['location']
-        folium.Marker(
-            [lat, lon],
-            popup=f"{name}<br>📞 {data['contact']}",
-            tooltip=name,
-            icon=folium.Icon(color="red" if name == assigned else "blue", icon="plus-sign")
-        ).add_to(m)
+        folium.Marker([lat, lon], tooltip=name, popup=data['contact'],
+                      icon=folium.Icon(color="red" if name == assigned else "blue")).add_to(m)
 
     st_folium(m, width=700, height=500)
 
+    if st.button("🔙 Back"):
+        st.session_state['page'] = 'home'
+        st.rerun()
 
-
-# ---------- Signal Control ----------
 def signal_control_page():
     add_logo()
-    st.title("🚦 Traffic Signal Control")
-    entered_code = st.text_input("Enter Emergency Code")
+    st.title("🚦 Signal Control")
+
+    code = st.text_input("Enter Emergency Code")
 
     if st.button("Activate Signal"):
-        if entered_code == st.session_state.get('emergency_code'):
+        if code == st.session_state.get('emergency_code'):
             st.success("Signal turned GREEN. Please cross.")
             time.sleep(3)
-            st.info("Vehicle crossed. Signal is back to normal.")
+            st.info("Signal reset to normal.")
             st.session_state['emergency_code'] = None
         else:
             st.error("Invalid Code")
 
-# ---------- Profile Page ----------
-def profile_page():
-    add_logo()
-    st.title("👤 User Profile")
+    if st.button("🔙 Back"):
+        st.session_state['page'] = 'home'
+        st.rerun()
 
-    user_id = st.session_state['authenticated_user']
-    user_data = st.session_state['user_db'].get(user_id, {})
-
-    st.write("### Basic Information")
-    st.write(f"**User ID**: {user_id}")
-    st.write(f"**Email**: {user_data.get('email')}")
-    st.write(f"**Username**: {user_data.get('username')}")
-    st.write(f"**Mobile**: {user_data.get('mobile')}")
-    st.write(f"**ID Proof**: {user_data.get('identity')}")
-
-# ---------- Main Router ----------
+# ---------- Main ----------
 def main():
     add_custom_background()
 
     if st.session_state['authenticated_user'] is None:
-        st.sidebar.markdown("## 🔑 Authentication")
-        choice = st.sidebar.radio("Go to", ["Login", "Register"])
-        if choice == "Login":
+        if st.session_state['page'] == 'login':
             login_page()
-        else:
+        elif st.session_state['page'] == 'register':
             register_page()
     else:
-        st.sidebar.markdown(f"👤 Logged in as: `{st.session_state['authenticated_user']}`")
-        st.sidebar.markdown("## 📋 Menu")
-        choice = st.sidebar.radio("Navigate", ["Home", "Profile", "Emergency", "Signal Control", "Logout"])
-
-        if choice == "Home":
+        if st.session_state['page'] == 'home':
             home_page()
-        elif choice == "Profile":
+        elif st.session_state['page'] == 'profile':
             profile_page()
-        elif choice == "Emergency":
+        elif st.session_state['page'] == 'emergency':
             emergency_page()
-        elif choice == "Signal Control":
+        elif st.session_state['page'] == 'signal':
             signal_control_page()
-        elif choice == "Logout":
-            st.session_state['authenticated_user'] = None
-            st.experimental_rerun()
 
 # ---------- Run App ----------
 if __name__ == "__main__":
