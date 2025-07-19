@@ -29,7 +29,7 @@ def add_custom_background():
 
 def add_logo():
     try:
-        st.image("./PRANA_SURAKSHA.png", width=80)
+        st.image("PRANA_SURAKSHA.png", width=80)
     except:
         st.warning("Logo image not found.")
 
@@ -85,14 +85,14 @@ def insert_user(user_id, email, username, mobile, identity, password):
     conn.close()
 
 def get_user(user_id):
-    conn = sqlite3.connect("users.db")  # ✅ Fixed typo here
+    conn = sqlite3.connect("users.db")
     c = conn.cursor()
-    c.execute("SELECT * FROM users WHERE user_id=?", (user_id,))  # ✅ Correct column
+    c.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
     user = c.fetchone()
     conn.close()
     return user
 
-# ---------- Ensure table exists ----------
+# ---------- Ensure table exists before anything else ----------
 create_user_table()
 
 # ---------- Session State ----------
