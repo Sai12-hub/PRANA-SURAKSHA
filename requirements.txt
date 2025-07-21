@@ -1,11 +1,6 @@
-# Core Streamlit app
-streamlit==1.35.0
-
-# ML and Data Handling
-scikit-learn==1.4.2
-numpy==1.26.4
-pandas==2.2.2
-
-# Mapping and Geolocation
-folium==0.16.0
-streamlit-folium==0.16.0
+streamlit
+scikit-learn
+numpy
+pandas
+folium
+streamlit-folium
